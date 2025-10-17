@@ -1,0 +1,49 @@
+version: '3.9'
+services:
+  frontend:
+    build: ./frontend
+    container_name: movie-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+    depends_on:
+      - backend
+
+  backend:
+    build: ./backend
+    container_name: movie-backend
+    ports:
+      - "5000:5000"
+    environment:
+      - DATABASE_URL=postgres://postgres:postgres@db:5432/movies
+    depends_on:
+      - db
+
+  db:
+    image: postgres:14
+    container_name: movie-db
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: movies
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  jenkins:
+    build: ./jenkins
+    container_name: movie-jenkins
+    ports:
+      - "9090:8080"
+      - "50000:50000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - jenkins_home:/var/jenkins_home
+    restart: unless-stopped
+
+volumes:
+  db_data:
+  jenkins_home:
