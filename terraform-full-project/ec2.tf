@@ -40,7 +40,7 @@ resource "aws_eip" "web_eip" {
 }
 
 # EC2 Instance
-resource "aws_instance" "web_server" {
+resource "aws_instance" "web_server_2" {
   ami                         = var.ami_id
   instance_type               = var.instance_type
   subnet_id                   = aws_subnet.public_subnet.id

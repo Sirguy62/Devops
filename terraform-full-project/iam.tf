@@ -38,7 +38,7 @@ resource "aws_iam_instance_profile" "ec2_profile" {
 }
 
 # Attach IAM profile to EC2
-resource "aws_instance" "web_server_2" {
+resource "aws_instance" "web_server_iam" {
   ami                         = var.ami_id
   instance_type               = var.instance_type
   subnet_id                   = aws_subnet.public_subnet.id
@@ -55,6 +55,6 @@ resource "aws_instance" "web_server_2" {
               EOF
 
   tags = {
-    Name = "${var.project_name}-ec2"
+    Name = "${var.project_name}-ec2-iam"
   }
 }
