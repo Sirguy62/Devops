@@ -1,69 +1,67 @@
-name: Deploy on Self-Hosted Runner (Devops EC2)
+
+name: 🐳 Dynamic Docker Deployment
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: self-hosted
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Move project into ~/Devops
+      - name: 🧭 Navigate to Devops directory
         run: |
-          echo "📦 Syncing repo into ~/Devops folder..."
-          rm -rf ~/Devops/ci-build || true
-          mkdir -p ~/Devops/ci-build
-          cp -r . ~/Devops/ci-build
-          cd ~/Devops/ci-build
-          echo "✅ Repo copied into ~/Devops/ci-build"
+          cd ~/Devops
+          echo "📂 Current directory:"
+          pwd
+          echo "📁 Listing contents:"
+          ls -R
 
-      - name: Ensure Docker is installed
+      - name: 🧹 Clean up old containers
         run: |
-          if ! command -v docker &> /dev/null; then
-            echo "Installing Docker..."
-            sudo apt update -y
-            sudo apt install -y docker.io
-            sudo systemctl enable docker
-            sudo systemctl start docker
-          fi
-          docker --version
+          echo "🧹 Cleaning up existing containers..."
+          docker ps -aq | xargs -r docker stop
+          docker ps -aq | xargs -r docker rm
 
-      - name: Deploy Containers
+      - name: ⚙️ Build and deploy all Docker projects dynamically
         run: |
           set -e
-          cd ~/Devops/ci-build
-          echo "🧹 Cleaning up old containers..."
-          docker stop backend frontend || true
-          docker rm backend frontend || true
+          BASE_DIR=~/Devops
+          PORT=3000
 
-          # --- Microservices section ---
-          if [ -d "Microservices/backend" ]; then
-            echo "🚀 Building Microservices backend..."
-            cd Microservices/backend
-            docker build -t backend-app .
-            docker run -d --name backend -p 8080:8080 backend-app
-            cd ../..
+          echo "🔍 Scanning for Dockerfiles in $BASE_DIR..."
+          mapfile -t DOCKERFILES < <(find $BASE_DIR -type f -name "Dockerfile")
+
+          if [ ${#DOCKERFILES[@]} -eq 0 ]; then
+            echo "❌ No Dockerfiles found in $BASE_DIR"
+            exit 1
           fi
 
-          if [ -d "Microservices/frontend" ]; then
-            echo "🎨 Building Microservices frontend..."
-            cd Microservices/frontend
-            docker build -t frontend-app .
-            docker run -d --name frontend -p 3000:3000 frontend-app
-            cd ../..
-          fi
+          for dockerfile in "${DOCKERFILES[@]}"; do
+            PROJECT_DIR=$(dirname "$dockerfile")
+            PROJECT_NAME=$(basename "$PROJECT_DIR" | tr '[:upper:]' '[:lower:]')
 
-          # --- Movies section (optional) ---
-          if [ -d "Movies" ]; then
-            echo "🎬 Found Movies project — building image..."
-            cd Movies
-            docker build -t movies-app .
-            docker run -d --name movies -p 9090:9090 movies-app
-            cd ..
-          fi
+            echo "-------------------------------------------"
+            echo "🚀 Found project: $PROJECT_NAME"
+            echo "📦 Building image from: $PROJECT_DIR"
+            echo "-------------------------------------------"
 
-          echo "✅ Deployment finished successfully!"
+            cd "$PROJECT_DIR"
+            docker build -t "${PROJECT_NAME}-app" .
+
+            # Increment port dynamically
+            PORT=$((PORT + 1))
+            echo "🛳️ Running ${PROJECT_NAME}-app on port ${PORT}..."
+
+            docker run -d --name "$PROJECT_NAME" -p ${PORT}:3000 "${PROJECT_NAME}-app" || {
+              echo "⚠️ Failed to start container for $PROJECT_NAME"
+              continue
+            }
+
+            cd "$BASE_DIR"
+          done
+
+          echo "✅ All Docker projects built and deployed successfully!"
