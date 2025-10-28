@@ -1,4 +1,4 @@
-name: Deploy on Self-Hosted Runner
+name: Deploy on Self-Hosted Runner (Devops EC2)
 
 on:
   push:
@@ -6,16 +6,25 @@ on:
 
 jobs:
   deploy:
-    runs-on: self-hosted   
+    runs-on: self-hosted
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Verify Docker
+      - name: Move project into ~/Devops
+        run: |
+          echo "📦 Syncing repo into ~/Devops folder..."
+          rm -rf ~/Devops/ci-build || true
+          mkdir -p ~/Devops/ci-build
+          cp -r . ~/Devops/ci-build
+          cd ~/Devops/ci-build
+          echo "✅ Repo copied into ~/Devops/ci-build"
+
+      - name: Ensure Docker is installed
         run: |
           if ! command -v docker &> /dev/null; then
-            echo "Docker not found! Installing..."
+            echo "Installing Docker..."
             sudo apt update -y
             sudo apt install -y docker.io
             sudo systemctl enable docker
@@ -23,24 +32,38 @@ jobs:
           fi
           docker --version
 
-      - name: Deploy backend and frontend
+      - name: Deploy Containers
         run: |
           set -e
-          PROJECT_DIR=$(basename ${{ github.repository }})
-          cd /home/ubuntu/$PROJECT_DIR || cd $GITHUB_WORKSPACE
-
-          echo "🧹 Cleaning old containers..."
+          cd ~/Devops/ci-build
+          echo "🧹 Cleaning up old containers..."
           docker stop backend frontend || true
           docker rm backend frontend || true
 
-          echo "🚀 Building backend..."
-          cd Backend
-          docker build -t backend-app .
-          docker run -d --name backend -p 8080:8080 backend-app
+          # --- Microservices section ---
+          if [ -d "Microservices/backend" ]; then
+            echo "🚀 Building Microservices backend..."
+            cd Microservices/backend
+            docker build -t backend-app .
+            docker run -d --name backend -p 8080:8080 backend-app
+            cd ../..
+          fi
 
-          echo "🎨 Building frontend..."
-          cd ../frontend
-          docker build -t frontend-app .
-          docker run -d --name frontend -p 3000:3000 frontend-app
+          if [ -d "Microservices/frontend" ]; then
+            echo "🎨 Building Microservices frontend..."
+            cd Microservices/frontend
+            docker build -t frontend-app .
+            docker run -d --name frontend -p 3000:3000 frontend-app
+            cd ../..
+          fi
 
-          echo "✅ Deployment complete!"
+          # --- Movies section (optional) ---
+          if [ -d "Movies" ]; then
+            echo "🎬 Found Movies project — building image..."
+            cd Movies
+            docker build -t movies-app .
+            docker run -d --name movies -p 9090:9090 movies-app
+            cd ..
+          fi
+
+          echo "✅ Deployment finished successfully!"
