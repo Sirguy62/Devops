@@ -1,0 +1,9 @@
+# Ignore Grafana runtime data
+grafana/grafana.db
+grafana/png/
+grafana/pdf/
+grafana/csv/
+
+# Ignore Docker volumes and cache
+*.log
+*.tmp
