@@ -1,67 +1,49 @@
-
-name: 🐳 Dynamic Docker Deployment
+name: Deploy to EC2
 
 on:
   push:
-    branches:
-      - main
-  workflow_dispatch:
+    branches: [ main ]
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    runs-on: ubuntu-latest
 
     steps:
-      - name: 🧭 Navigate to Devops directory
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.EC2_SSH_KEY }}
+
+      - name: Copy files to EC2
         run: |
-          cd ~/Devops
-          echo "📂 Current directory:"
-          pwd
-          echo "📁 Listing contents:"
-          ls -R
+          PROJECT_DIR=$(basename ${{ github.repository }})
+          echo "Deploying project to /home/ubuntu/$PROJECT_DIR"
+          rsync -avz -e "ssh -o StrictHostKeyChecking=no" ./ ubuntu@${{ secrets.EC2_HOST }}:/home/ubuntu/$PROJECT_DIR/
 
-      - name: 🧹 Clean up old containers
+      - name: SSH into EC2 and deploy containers
         run: |
-          echo "🧹 Cleaning up existing containers..."
-          docker ps -aq | xargs -r docker stop
-          docker ps -aq | xargs -r docker rm
+          PROJECT_DIR=$(basename ${{ github.repository }})
+          ssh -o StrictHostKeyChecking=no ubuntu@${{ secrets.EC2_HOST }} << EOF
+          cd /home/ubuntu/$PROJECT_DIR
 
-      - name: ⚙️ Build and deploy all Docker projects dynamically
-        run: |
-          set -e
-          BASE_DIR=~/Devops
-          PORT=3000
+          echo "Stopping old containers..."
+          docker stop backend || true
+          docker rm backend || true
+          docker stop frontend || true
+          docker rm frontend || true
 
-          echo "🔍 Scanning for Dockerfiles in $BASE_DIR..."
-          mapfile -t DOCKERFILES < <(find $BASE_DIR -type f -name "Dockerfile")
+          echo "Building backend..."
+          cd Backend
+          docker build -t backend-app .
+          docker run -d --name backend -p 8080:8080 backend-app
 
-          if [ ${#DOCKERFILES[@]} -eq 0 ]; then
-            echo "❌ No Dockerfiles found in $BASE_DIR"
-            exit 1
-          fi
+          echo "Building frontend..."
+          cd ../frontend
+          docker build -t frontend-app .
+          docker run -d --name frontend -p 3000:3000 frontend-app
 
-          for dockerfile in "${DOCKERFILES[@]}"; do
-            PROJECT_DIR=$(dirname "$dockerfile")
-            PROJECT_NAME=$(basename "$PROJECT_DIR" | tr '[:upper:]' '[:lower:]')
-
-            echo "-------------------------------------------"
-            echo "🚀 Found project: $PROJECT_NAME"
-            echo "📦 Building image from: $PROJECT_DIR"
-            echo "-------------------------------------------"
-
-            cd "$PROJECT_DIR"
-            docker build -t "${PROJECT_NAME}-app" .
-
-            # Increment port dynamically
-            PORT=$((PORT + 1))
-            echo "🛳️ Running ${PROJECT_NAME}-app on port ${PORT}..."
-
-            docker run -d --name "$PROJECT_NAME" -p ${PORT}:3000 "${PROJECT_NAME}-app" || {
-              echo "⚠️ Failed to start container for $PROJECT_NAME"
-              continue
-            }
-
-            cd "$BASE_DIR"
-          done
-
-          echo "✅ All Docker projects built and deployed successfully!"
+          echo "✅ Deployment complete!"
+          EOF
